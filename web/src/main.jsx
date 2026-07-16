@@ -259,7 +259,7 @@ function StudentDashboard({ go, student }) {
   return (
     <main className="student-page page-shell">
       <section className="student-welcome">
-        <div className="welcome-main"><span className="eyebrow"><Sparkles size={14}/> Chào buổi sáng</span><h1>Xin chào, {s.name}!</h1><p>Mỗi bài luyện hôm nay là một bước gần hơn tới chứng chỉ IC3.</p><div className="student-meta"><span><Building2 size={16}/>{s.school}</span><span><Layers3 size={16}/>{s.grade}</span><span><School size={16}/>{s.className}</span></div></div>
+        <div className="welcome-main"><span className="eyebrow"><Sparkles size={14}/> Xin chào</span><h1>{s.name}</h1><div className="student-meta"><span><Building2 size={16}/>{s.school}</span><span><Layers3 size={16}/>{s.grade}</span><span><School size={16}/>{s.className}</span></div></div>
         <div className="welcome-progress"><div className="progress-ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="50"/><circle className="ring-value" cx="60" cy="60" r="50"/></svg><div><b>72%</b><small>Tiến độ</small></div></div><RobotBuddy small /></div>
       </section>
       <div className="dashboard-stats">{miniStats.map(([Icon, value, label, color]) => <article key={label} className="mini-stat"><span className={`stat-icon ${color}`}><Icon size={21}/></span><div><strong>{value}</strong><small>{label}</small></div></article>)}</div>
