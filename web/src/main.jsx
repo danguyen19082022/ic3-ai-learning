@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  Award, BarChart3, BookOpen, Bot, BrainCircuit, Building2, CalendarDays,
+  Award, BookOpen, Bot, BrainCircuit, Building2,
   Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp,
-  ClipboardCheck, Clock3, Download, FileQuestion, Filter, Flag, GraduationCap,
-  GripVertical, Hash, Home, KeyRound, Layers3, LayoutDashboard, ListChecks, LockKeyhole,
-  LogIn, LogOut, Medal, Menu, MousePointer2, PanelLeftOpen, Pencil, Play,
+  ClipboardCheck, Clock3, Download, FileQuestion, Filter, Flag,
+  GripVertical, Hash, Home, KeyRound, Layers3, ListChecks, LockKeyhole,
+  LogIn, Medal, MousePointer2, PanelLeftOpen, Pencil, Play,
   Plus, RefreshCcw, RotateCcw, School, Search, Settings2, ShieldCheck, Sparkles,
   Swords, Target, TimerReset, TrendingUp, Trophy, Upload, UserCog, UserRound, Users,
   X, XCircle, Zap
@@ -21,6 +21,16 @@ import { readLastAttempt, readStoredAttempts, saveAttempt } from './utils/attemp
 import { formatTime } from './utils/formatters.js';
 import { cx } from './utils/classNames.js';
 import { downloadCsv } from './utils/exportCsv.js';
+import { Logo } from './components/common/Logo.jsx';
+import { RobotBuddy } from './components/common/RobotBuddy.jsx';
+import { PageIntro } from './components/common/PageIntro.jsx';
+import { RankBadge } from './components/common/RankBadge.jsx';
+import { Toast } from './components/common/Toast.jsx';
+import { AppHeader } from './components/layout/AppHeader.jsx';
+import { AppFooter } from './components/layout/AppFooter.jsx';
+import { AdminShell } from './components/management/AdminShell.jsx';
+import { AdminTop } from './components/management/AdminTop.jsx';
+import { ManagementStats } from './components/management/ManagementStats.jsx';
 
 
 const topicCatalog = [
@@ -40,46 +50,6 @@ function formatTopicNumber(index) {
 }
 
 
-function Logo({ compact = false }) {
-  return (
-    <div className="brand">
-      <div className="brand-mark"><BrainCircuit size={25} /></div>
-      {!compact && <div><strong>IC3 <span>AI</span> Learning</strong><small>Học thông minh · Vững kỹ năng số</small></div>}
-    </div>
-  );
-}
-
-function RobotBuddy({ small = false }) {
-  return (
-    <div className={cx('robot-buddy', small && 'robot-small')} aria-hidden="true">
-      <div className="robot-antenna"><span /></div>
-      <div className="robot-head">
-        <div className="robot-face"><i /><i /></div>
-        <div className="robot-mouth" />
-      </div>
-      <div className="robot-body"><BrainCircuit size={small ? 17 : 25} /></div>
-      <div className="robot-shadow" />
-    </div>
-  );
-}
-
-function AppHeader({ page, go, student }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <header className="site-header">
-      <button className="logo-button" onClick={() => go('home')}><Logo /></button>
-      <nav className={cx('top-nav', open && 'open')}>
-        <button onClick={() => { go('student'); setOpen(false); }} className={page === 'student' ? 'active' : ''}><LayoutDashboard size={17} /> Học tập</button>
-        <button onClick={() => { go('leaderboard'); setOpen(false); }} className={page === 'leaderboard' ? 'active' : ''}><Trophy size={17} /> Xếp hạng</button>
-        <button onClick={() => { go('teacher'); setOpen(false); }} className={page === 'teacher' ? 'active' : ''}><School size={17} /> Giáo viên</button>
-      </nav>
-      <div className="header-actions">
-        {student && page !== 'home' && <div className="student-chip"><span>NA</span><div><b>{student.name}</b><small>{student.className}</small></div></div>}
-        <button className="mobile-menu" onClick={() => setOpen(!open)} aria-label="Mở menu">{open ? <X /> : <Menu />}</button>
-      </div>
-    </header>
-  );
-}
 
 function TechBackdrop() {
   return <div className="tech-backdrop" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div>;
@@ -98,10 +68,6 @@ function SelectField({ label, icon: Icon, value, onChange, disabled, children })
   );
 }
 
-function RankBadge({ rank }) {
-  const icons = [<Trophy size={16} />, <Medal size={16} />, <Award size={16} />];
-  return <span className={cx('rank-badge', rank <= 3 && `top-${rank}`)}>{icons[rank - 1] || rank}</span>;
-}
 
 function LeaderboardPreview() {
   return (
@@ -186,9 +152,6 @@ function HomePage({ go, onLogin, setToast }) {
   );
 }
 
-function PageIntro({ eyebrow, title, text, action }) {
-  return <div className="page-intro"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h1>{title}</h1>{text && <p>{text}</p>}</div>{action}</div>;
-}
 
 function StudentDashboard({ go, student, setToast }) {
   const s = student || { name: 'Nguyễn Văn A', school: schools[0], grade: 'Khối 6', className: '6A1' };
@@ -677,21 +640,6 @@ function LeaderboardPage() {
 }
 
 
-function AdminShell({ role, active, setActive, go, children }) {
-  const teacherMenu = [[LayoutDashboard,'Tổng quan'],[Users,'Lớp & học sinh'],[ClipboardCheck,'Kết quả học tập'],[BarChart3,'Thống kê'],[Download,'Xuất báo cáo']];
-  const adminMenu = [[LayoutDashboard,'Tổng quan'],[FileQuestion,'Ngân hàng câu hỏi'],[UserCog,'Giáo viên'],[Users,'Học sinh'],[Building2,'Trường & lớp'],[BookOpen,'Chủ đề'],[Settings2,'Cấu hình bài thi'],[BarChart3,'Báo cáo']];
-  const menu = role==='teacher'?teacherMenu:adminMenu;
-  return <div className="admin-layout"><aside className="admin-sidebar"><Logo/><div className="role-card"><span>{role==='teacher'?<School/>:<ShieldCheck/>}</span><div><small>Đăng nhập với vai trò</small><b>{role==='teacher'?'Giáo viên':'Quản trị viên'}</b></div></div><nav>{menu.map(([Icon,label])=><button key={label} className={active===label?'active':''} onClick={()=>setActive(label)}><Icon size={19}/>{label}{active===label&&<i/>}</button>)}</nav><button className="logout-button" onClick={()=>go('home')}><LogOut size={18}/> Đăng xuất</button></aside><div className="admin-main">{children}</div></div>;
-}
-
-function AdminTop({ title, subtitle, name, onMenu }) {
-  return <div className="admin-top"><div><button className="admin-mobile-menu" onClick={onMenu}><Menu/></button><span className="eyebrow">IC3 AI Learning</span><h1>{title}</h1><p>{subtitle}</p></div><div className="admin-user"><button className="icon-button"><CalendarDays size={19}/></button><span>{name[0]}</span><div><b>{name}</b><small>Hôm nay, 16/07/2026</small></div></div></div>;
-}
-
-function ManagementStats({ admin=false }) {
-  const data=admin?[[Building2,'03','Trường','blue'],[Users,'528','Học sinh','violet'],[FileQuestion,'1.248','Câu hỏi','cyan'],[Target,'87%','Tỉ lệ đạt','green']]:[[School,'06','Lớp phụ trách','blue'],[Users,'186','Học sinh','violet'],[ClipboardCheck,'74','Bài làm tuần này','cyan'],[TrendingUp,'84%','Tỉ lệ đạt','green']];
-  return <div className="management-stats">{data.map(([Icon,val,label,color])=><article key={label}><span className={`stat-icon ${color}`}><Icon/></span><div><strong>{val}</strong><small>{label}</small></div><TrendingUp size={16}/></article>)}</div>;
-}
 
 function TeacherDashboard({ go, setToast }) {
   const [active,setActive]=useState('Tổng quan'); const [search,setSearch]=useState('');
@@ -713,10 +661,6 @@ function AdminDashboard({ go, setToast }) {
   </AdminShell>;
 }
 
-function Toast({ toast, close }) {
-  useEffect(()=>{if(!toast)return;const id=setTimeout(close,3200);return()=>clearTimeout(id);},[toast]);
-  if(!toast)return null; return <div className={cx('toast',toast.type)}>{toast.type==='error'?<XCircle/>:<CheckCircle2/>}<span>{toast.text}</span><button onClick={close}><X/></button></div>;
-}
 
 function App() {
   const [page, go] = useHashPage();
@@ -738,7 +682,7 @@ function App() {
   else if(page==='leaderboard')content=<LeaderboardPage/>;
   else if(page==='teacher')content=<TeacherDashboard go={go} setToast={setToast}/>;
   else if(page==='admin')content=<AdminDashboard go={go} setToast={setToast}/>;
-  return <div className="app">{!bare&&<AppHeader page={page} go={go} student={student}/>} {content}{!bare&&<footer><div><Logo/><p>© 2026 IC3 AI Learning · Kỹ năng số cho tương lai.</p></div><div><button onClick={()=>go('student')}>Học tập</button><button onClick={()=>go('leaderboard')}>Bảng xếp hạng</button><button onClick={()=>go('teacher')}>Giáo viên</button><button onClick={()=>go('admin')}>Quản trị viên</button></div></footer>}<Toast toast={toast} close={()=>setToast(null)}/></div>;
+  return <div className="app">{!bare&&<AppHeader page={page} go={go} student={student}/>} {content}{!bare&&<AppFooter go={go} />}<Toast toast={toast} close={()=>setToast(null)}/></div>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
