@@ -11,81 +11,17 @@ import {
   X, XCircle, Zap
 } from 'lucide-react';
 import './styles.css';
+import { schools, grades, classMap, studentNames } from './data/schools.js';
+import { leaderboardRows } from './data/leaderboard.js';
+import { questions } from './data/questions.js';
+import { teacherStudents, questionBank } from './data/management.js';
+import { useHashPage } from './hooks/useHashPage.js';
+import { calculateAttemptResult, isQuestionAnswered, isQuestionCorrect } from './utils/quizScoring.js';
+import { readLastAttempt, readStoredAttempts, saveAttempt } from './utils/attemptStorage.js';
+import { formatTime } from './utils/formatters.js';
+import { cx } from './utils/classNames.js';
+import { downloadCsv } from './utils/exportCsv.js';
 
-const schools = ['THCS Nguyễn Trãi', 'THCS Lê Quý Đôn', 'THCS Trần Hưng Đạo'];
-const grades = ['Khối 6', 'Khối 7', 'Khối 8'];
-const classMap = {
-  'Khối 6': ['6A1', '6A2'],
-  'Khối 7': ['7A1', '7A2'],
-  'Khối 8': ['8A1', '8A2']
-};
-const studentNames = ['Nguyễn Văn A', 'Trần Thị B', 'Lê Minh C', 'Phạm Gia Hân', 'Hoàng Đức Anh'];
-
-const leaderboardRows = [
-  { name: 'Phạm Gia Hân', school: 'THCS Nguyễn Trãi', grade: 'Khối 7', className: '7A1', score: 960, time: '18:42', date: '16/07/2026', mode: 'Thi thử' },
-  { name: 'Hoàng Đức Anh', school: 'THCS Lê Quý Đôn', grade: 'Khối 8', className: '8A2', score: 940, time: '17:55', date: '16/07/2026', mode: 'Thi thử' },
-  { name: 'Trần Thị B', school: 'THCS Trần Hưng Đạo', grade: 'Khối 6', className: '6A1', score: 940, time: '21:08', date: '15/07/2026', mode: 'Thi thử' },
-  { name: 'Lê Minh C', school: 'THCS Nguyễn Trãi', grade: 'Khối 8', className: '8A1', score: 910, time: '22:31', date: '15/07/2026', mode: 'Ôn tập' },
-  { name: 'Nguyễn Văn A', school: 'THCS Lê Quý Đôn', grade: 'Khối 6', className: '6A2', score: 890, time: '24:10', date: '14/07/2026', mode: 'Thi thử' },
-  { name: 'Võ Minh Khang', school: 'THCS Nguyễn Trãi', grade: 'Khối 7', className: '7A2', score: 870, time: '26:04', date: '13/07/2026', mode: 'Thi thử' },
-  { name: 'Đỗ Khánh Linh', school: 'THCS Trần Hưng Đạo', grade: 'Khối 8', className: '8A1', score: 850, time: '25:46', date: '12/07/2026', mode: 'Ôn tập' }
-];
-
-const questions = [
-  {
-    id: 1, type: 'single', label: 'Chọn một đáp án',
-    text: 'Đâu là chức năng chính của hệ điều hành trên máy tính?',
-    options: ['Quản lý phần cứng và phần mềm', 'Chỉ dùng để soạn thảo văn bản', 'Chỉ dùng để truy cập Internet', 'Tạo bài trình chiếu tự động'],
-    correct: 0,
-    explanation: 'Hệ điều hành quản lý tài nguyên phần cứng, phần mềm và cung cấp môi trường để các ứng dụng hoạt động.'
-  },
-  {
-    id: 2, type: 'multiple', label: 'Chọn nhiều đáp án',
-    text: 'Những hành động nào giúp bảo vệ tài khoản trực tuyến?',
-    options: ['Bật xác thực hai yếu tố', 'Dùng cùng một mật khẩu cho mọi tài khoản', 'Tạo mật khẩu mạnh và riêng biệt', 'Chia sẻ mã OTP với người hỗ trợ'],
-    correct: [0, 2],
-    explanation: 'Mật khẩu mạnh, riêng biệt và xác thực hai yếu tố giúp giảm đáng kể nguy cơ tài khoản bị chiếm quyền.'
-  },
-  {
-    id: 3, type: 'boolean', label: 'Bảng Đúng / Sai',
-    text: 'Xác định các phát biểu sau là Đúng hay Sai.',
-    statements: [
-      ['Tệp có thể được lưu trong thư mục.', true],
-      ['RAM lưu dữ liệu vĩnh viễn khi tắt máy.', false],
-      ['Trình duyệt web là một phần mềm ứng dụng.', true]
-    ],
-    explanation: 'RAM là bộ nhớ tạm thời; dữ liệu trong RAM thường mất khi thiết bị tắt nguồn.'
-  },
-  {
-    id: 4, type: 'matching', label: 'Kéo thả ghép cặp',
-    text: 'Kéo mỗi thuật ngữ vào vị trí phù hợp với mô tả.',
-    pairs: [
-      ['CPU', 'Xử lý lệnh và dữ liệu'],
-      ['RAM', 'Lưu dữ liệu tạm thời'],
-      ['SSD', 'Lưu trữ dữ liệu lâu dài']
-    ],
-    explanation: 'CPU xử lý lệnh, RAM lưu tạm trong phiên làm việc và SSD lưu dữ liệu lâu dài.'
-  },
-  {
-    id: 5, type: 'reorder', label: 'Sắp xếp thứ tự',
-    text: 'Sắp xếp đúng quy trình lưu một tài liệu mới.',
-    items: ['Chọn thư mục lưu', 'Nhập tên tệp', 'Chọn lệnh Lưu', 'Nhấn nút xác nhận Lưu'],
-    correctOrder: ['Chọn lệnh Lưu', 'Chọn thư mục lưu', 'Nhập tên tệp', 'Nhấn nút xác nhận Lưu'],
-    explanation: 'Quy trình thông thường là gọi lệnh Lưu, chọn vị trí, đặt tên rồi xác nhận.'
-  },
-  {
-    id: 6, type: 'hotspot', label: 'Chọn vùng trên hình',
-    text: 'Hãy chọn nút dùng để đóng cửa sổ trong hình minh họa.',
-    correctRegion: { xMin: 88, xMax: 100, yMin: 0, yMax: 14 },
-    explanation: 'Nút có biểu tượng X ở góc trên bên phải dùng để đóng cửa sổ.'
-  }
-];
-
-const pageNames = {
-  home: 'Trang chủ', student: 'Dashboard học sinh', mode: 'Chọn chế độ', topics: 'Chủ đề ôn tập',
-  quiz: 'Làm bài', result: 'Kết quả', review: 'Xem lại đáp án', leaderboard: 'Bảng xếp hạng',
-  teacher: 'Giáo viên', admin: 'Quản trị viên'
-};
 
 const topicCatalog = [
   { id: 'topic-1', name: 'Nền tảng máy tính', questionCount: 18, grade: 'Khối 6', displayOrder: 1, status: 'active', theme: 'blue', description: 'Kiến thức cơ bản về hệ điều hành và thiết bị số.' },
@@ -98,106 +34,11 @@ const topicCatalog = [
   { id: 'topic-8', name: 'Đạo đức số', questionCount: 21, grade: 'Khối 8', displayOrder: 2, status: 'active', theme: 'amber', description: 'Hiểu quyền riêng tư và trách nhiệm khi dùng công nghệ.' }
 ];
 
-function cx(...classes) { return classes.filter(Boolean).join(' '); }
 
 function formatTopicNumber(index) {
   return index < 9 ? `0${index + 1}` : String(index + 1);
 }
 
-const LAST_ATTEMPT_KEY = 'ic3_last_attempt';
-const ATTEMPT_HISTORY_KEY = 'ic3_attempt_history';
-const ATTEMPT_TTL = 7 * 24 * 60 * 60 * 1000;
-
-function arraysEqual(a, b) {
-  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, index) => value === b[index]);
-}
-
-function isQuestionAnswered(question, answer) {
-  if (!question || answer === undefined || answer === null) return false;
-  if (question.type === 'single') return Number.isInteger(answer);
-  if (question.type === 'multiple') return Array.isArray(answer) && answer.length > 0;
-  if (question.type === 'boolean') return question.statements.every((_, index) => typeof answer[index] === 'boolean');
-  if (question.type === 'matching') return question.pairs.every((_, index) => typeof answer[index] === 'string' && answer[index].length > 0);
-  if (question.type === 'reorder') return Array.isArray(answer) && answer.length === question.items.length;
-  if (question.type === 'hotspot') return Number.isFinite(answer.x) && Number.isFinite(answer.y);
-  return false;
-}
-
-function isQuestionCorrect(question, answer) {
-  if (!isQuestionAnswered(question, answer)) return false;
-  if (question.type === 'single') return answer === question.correct;
-  if (question.type === 'multiple') return arraysEqual([...answer].sort((a, b) => a - b), [...question.correct].sort((a, b) => a - b));
-  if (question.type === 'boolean') return question.statements.every(([, correct], index) => answer[index] === correct);
-  if (question.type === 'matching') return question.pairs.every(([term], index) => answer[index] === term);
-  if (question.type === 'reorder') return arraysEqual(answer, question.correctOrder);
-  if (question.type === 'hotspot') {
-    const region = question.correctRegion;
-    return answer.x >= region.xMin && answer.x <= region.xMax && answer.y >= region.yMin && answer.y <= region.yMax;
-  }
-  return false;
-}
-
-function calculateAttemptResult({ attemptQuestions, answers, mode, scope, initialSeconds, remainingSeconds, submittedByTimeout = false }) {
-  const totalQuestions = attemptQuestions.length;
-  const correctCount = attemptQuestions.filter((question) => isQuestionCorrect(question, answers[question.id])).length;
-  const unansweredCount = attemptQuestions.filter((question) => !isQuestionAnswered(question, answers[question.id])).length;
-  return {
-    id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    mode, scope, questions: attemptQuestions, totalQuestions, answers, correctCount,
-    wrongCount: totalQuestions - correctCount,
-    unansweredCount,
-    score: totalQuestions ? Math.round((correctCount / totalQuestions) * 1000) : 0,
-    initialSeconds,
-    remainingSeconds,
-    elapsedSeconds: initialSeconds - remainingSeconds,
-    completedAt: new Date().toISOString(),
-    submittedByTimeout
-  };
-}
-
-function formatTime(seconds = 0) {
-  const safeSeconds = Math.max(0, Math.floor(seconds));
-  return `${String(Math.floor(safeSeconds / 60)).padStart(2, '0')}:${String(safeSeconds % 60).padStart(2, '0')}`;
-}
-
-function readStoredAttempts() {
-  try {
-    const cutoff = Date.now() - ATTEMPT_TTL;
-    const parsed = JSON.parse(localStorage.getItem(ATTEMPT_HISTORY_KEY) || '[]');
-    const valid = Array.isArray(parsed) ? parsed.filter((attempt) => Date.parse(attempt.completedAt) >= cutoff) : [];
-    if (valid.length !== parsed.length) localStorage.setItem(ATTEMPT_HISTORY_KEY, JSON.stringify(valid));
-    return valid;
-  } catch { return []; }
-}
-
-function readLastAttempt() {
-  try {
-    const attempt = JSON.parse(localStorage.getItem(LAST_ATTEMPT_KEY) || 'null');
-    return attempt && Date.parse(attempt.completedAt) >= Date.now() - ATTEMPT_TTL ? attempt : null;
-  } catch { return null; }
-}
-
-function saveAttempt(attempt) {
-  const history = readStoredAttempts();
-  const nextHistory = [attempt, ...history.filter((item) => item.id !== attempt.id)];
-  localStorage.setItem(LAST_ATTEMPT_KEY, JSON.stringify(attempt));
-  localStorage.setItem(ATTEMPT_HISTORY_KEY, JSON.stringify(nextHistory));
-}
-
-function useHashPage() {
-  const read = () => window.location.hash.replace('#/', '') || 'home';
-  const [page, setPage] = useState(read);
-  useEffect(() => {
-    const handler = () => setPage(read());
-    window.addEventListener('hashchange', handler);
-    return () => window.removeEventListener('hashchange', handler);
-  }, []);
-  const go = (next) => {
-    window.location.hash = `/${next}`;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-  return [pageNames[page] ? page : 'home', go];
-}
 
 function Logo({ compact = false }) {
   return (
@@ -835,15 +676,6 @@ function LeaderboardPage() {
   return <main className="content-page leaderboard-page page-shell"><PageIntro eyebrow="Vinh danh thành tích" title="Bảng xếp hạng IC3" text="Điểm cao hơn được xếp trước; nếu bằng điểm, thời gian hoàn thành nhanh hơn sẽ xếp trên." action={<span className="live-dot">Cập nhật hôm nay</span>}/><section className="leaderboard-podium">{leaderboardRows.slice(0,3).map((r,i)=><article key={r.name} className={`podium-card podium-${i+1}`}><RankBadge rank={i+1}/><div className="podium-avatar">{r.name.split(' ').slice(-1)[0][0]}</div><div><b>{r.name}</b><small>{r.school} · {r.className}</small></div><strong>{r.score}<small> điểm</small></strong></article>)}</section><Filters filters={filters} setFilters={setFilters}/><section className="data-card rank-table"><div className="table-head"><span>Hạng</span><span>Học sinh</span><span>Trường</span><span>Khối / Lớp</span><span>Điểm</span><span>Thời gian</span><span>Ngày làm</span></div>{rows.map((r,i)=><div className={cx('table-row',i<3&&'top-row')} key={r.name}><span data-label="Hạng"><RankBadge rank={i+1}/></span><span data-label="Học sinh"><b>{r.name}</b><small>{r.mode}</small></span><span data-label="Trường">{r.school}</span><span data-label="Khối / Lớp">{r.grade} · {r.className}</span><span className="score-cell" data-label="Điểm">{r.score}</span><span data-label="Thời gian"><Clock3 size={14}/>{r.time}</span><span data-label="Ngày làm">{r.date}</span></div>)}</section></main>;
 }
 
-const teacherStudents = [
-  ['Nguyễn Văn A','6A1','12','860','Đang hoạt động'],['Trần Thị B','6A1','10','940','Đang hoạt động'],['Lê Minh C','6A2','8','910','Đang hoạt động'],['Phạm Gia Hân','7A1','15','960','Đang hoạt động'],['Hoàng Đức Anh','8A2','11','940','Tạm nghỉ']
-];
-
-function downloadCsv(name, rows) {
-  const content = '\uFEFF' + rows.map(r=>r.join(',')).join('\n');
-  const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'}));
-  const a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);
-}
 
 function AdminShell({ role, active, setActive, go, children }) {
   const teacherMenu = [[LayoutDashboard,'Tổng quan'],[Users,'Lớp & học sinh'],[ClipboardCheck,'Kết quả học tập'],[BarChart3,'Thống kê'],[Download,'Xuất báo cáo']];
@@ -870,9 +702,6 @@ function TeacherDashboard({ go, setToast }) {
   </AdminShell>;
 }
 
-const questionBank=[
-  ['IC3-001','Hệ điều hành có chức năng gì?','Single choice','Khối 6','Đang sử dụng'],['IC3-002','Hành động nào bảo vệ tài khoản?','Multiple choice','Khối 6','Đang sử dụng'],['IC3-003','Ghép thiết bị với chức năng','Matching','Khối 7','Cần chỉnh sửa'],['IC3-004','Chọn nút đóng cửa sổ','Hotspot','Khối 8','Tạm ẩn'],['IC3-005','Sắp xếp quy trình lưu tệp','Reorder','Khối 6','Đang sử dụng']
-];
 
 function AdminDashboard({ go, setToast }) {
   const [active,setActive]=useState('Tổng quan'); const [showForm,setShowForm]=useState(false);
