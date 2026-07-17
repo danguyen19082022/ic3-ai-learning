@@ -1,0 +1,5 @@
+/* Generic content */
+.content-page,.student-page,.result-page { padding-top: 48px; padding-bottom: 72px; min-height: calc(100vh - 76px); }
+.page-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; margin-bottom: 34px; }.page-intro h1 { margin: 7px 0 10px; font-size: clamp(29px,4vw,42px); letter-spacing: -1.5px; }.page-intro p { margin: 0; max-width: 650px; color: var(--muted); line-height: 1.7; font-size:18px; }
+footer { background: white; border-top: 1px solid var(--line); padding: 24px max(24px,calc((100vw - 1180px)/2)); display: flex; align-items: center; justify-content: space-between; gap: 24px; } footer>div { display: flex; align-items: center; gap: 24px; } footer .brand small { display:none; } footer p { font-size:14px; color: var(--muted); } footer button { border:0;background:none;color:var(--muted);font-size:15px;font-weight:600;cursor:pointer;} footer button:hover{color:var(--blue)}
+
