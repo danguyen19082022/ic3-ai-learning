@@ -4,11 +4,11 @@ import {
   Award, BarChart3, BookOpen, Bot, BrainCircuit, Building2, CalendarDays,
   Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp,
   ClipboardCheck, Clock3, Download, FileQuestion, Filter, Flag, GraduationCap,
-  GripVertical, Home, KeyRound, Layers3, LayoutDashboard, ListChecks, LockKeyhole,
+  GripVertical, Hash, Home, KeyRound, Layers3, LayoutDashboard, ListChecks, LockKeyhole,
   LogIn, LogOut, Medal, Menu, MousePointer2, PanelLeftOpen, Pencil, Play,
   Plus, RefreshCcw, RotateCcw, School, Search, Settings2, ShieldCheck, Sparkles,
-  Target, TimerReset, TrendingUp, Trophy, Upload, UserCog, UserRound, Users,
-  X, XCircle
+  Swords, Target, TimerReset, TrendingUp, Trophy, Upload, UserCog, UserRound, Users,
+  X, XCircle, Zap
 } from 'lucide-react';
 import './styles.css';
 
@@ -76,6 +76,7 @@ const questions = [
   {
     id: 6, type: 'hotspot', label: 'Chọn vùng trên hình',
     text: 'Hãy chọn nút dùng để đóng cửa sổ trong hình minh họa.',
+    correctRegion: { xMin: 88, xMax: 100, yMin: 0, yMax: 14 },
     explanation: 'Nút có biểu tượng X ở góc trên bên phải dùng để đóng cửa sổ.'
   }
 ];
@@ -87,6 +88,86 @@ const pageNames = {
 };
 
 function cx(...classes) { return classes.filter(Boolean).join(' '); }
+
+const LAST_ATTEMPT_KEY = 'ic3_last_attempt';
+const ATTEMPT_HISTORY_KEY = 'ic3_attempt_history';
+const ATTEMPT_TTL = 7 * 24 * 60 * 60 * 1000;
+
+function arraysEqual(a, b) {
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function isQuestionAnswered(question, answer) {
+  if (!question || answer === undefined || answer === null) return false;
+  if (question.type === 'single') return Number.isInteger(answer);
+  if (question.type === 'multiple') return Array.isArray(answer) && answer.length > 0;
+  if (question.type === 'boolean') return question.statements.every((_, index) => typeof answer[index] === 'boolean');
+  if (question.type === 'matching') return question.pairs.every((_, index) => typeof answer[index] === 'string' && answer[index].length > 0);
+  if (question.type === 'reorder') return Array.isArray(answer) && answer.length === question.items.length;
+  if (question.type === 'hotspot') return Number.isFinite(answer.x) && Number.isFinite(answer.y);
+  return false;
+}
+
+function isQuestionCorrect(question, answer) {
+  if (!isQuestionAnswered(question, answer)) return false;
+  if (question.type === 'single') return answer === question.correct;
+  if (question.type === 'multiple') return arraysEqual([...answer].sort((a, b) => a - b), [...question.correct].sort((a, b) => a - b));
+  if (question.type === 'boolean') return question.statements.every(([, correct], index) => answer[index] === correct);
+  if (question.type === 'matching') return question.pairs.every(([term], index) => answer[index] === term);
+  if (question.type === 'reorder') return arraysEqual(answer, question.correctOrder);
+  if (question.type === 'hotspot') {
+    const region = question.correctRegion;
+    return answer.x >= region.xMin && answer.x <= region.xMax && answer.y >= region.yMin && answer.y <= region.yMax;
+  }
+  return false;
+}
+
+function calculateAttemptResult({ attemptQuestions, answers, mode, scope, initialSeconds, remainingSeconds, submittedByTimeout = false }) {
+  const totalQuestions = attemptQuestions.length;
+  const correctCount = attemptQuestions.filter((question) => isQuestionCorrect(question, answers[question.id])).length;
+  const unansweredCount = attemptQuestions.filter((question) => !isQuestionAnswered(question, answers[question.id])).length;
+  return {
+    id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    mode, scope, questions: attemptQuestions, totalQuestions, answers, correctCount,
+    wrongCount: totalQuestions - correctCount,
+    unansweredCount,
+    score: totalQuestions ? Math.round((correctCount / totalQuestions) * 1000) : 0,
+    initialSeconds,
+    remainingSeconds,
+    elapsedSeconds: initialSeconds - remainingSeconds,
+    completedAt: new Date().toISOString(),
+    submittedByTimeout
+  };
+}
+
+function formatTime(seconds = 0) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  return `${String(Math.floor(safeSeconds / 60)).padStart(2, '0')}:${String(safeSeconds % 60).padStart(2, '0')}`;
+}
+
+function readStoredAttempts() {
+  try {
+    const cutoff = Date.now() - ATTEMPT_TTL;
+    const parsed = JSON.parse(localStorage.getItem(ATTEMPT_HISTORY_KEY) || '[]');
+    const valid = Array.isArray(parsed) ? parsed.filter((attempt) => Date.parse(attempt.completedAt) >= cutoff) : [];
+    if (valid.length !== parsed.length) localStorage.setItem(ATTEMPT_HISTORY_KEY, JSON.stringify(valid));
+    return valid;
+  } catch { return []; }
+}
+
+function readLastAttempt() {
+  try {
+    const attempt = JSON.parse(localStorage.getItem(LAST_ATTEMPT_KEY) || 'null');
+    return attempt && Date.parse(attempt.completedAt) >= Date.now() - ATTEMPT_TTL ? attempt : null;
+  } catch { return null; }
+}
+
+function saveAttempt(attempt) {
+  const history = readStoredAttempts();
+  const nextHistory = [attempt, ...history.filter((item) => item.id !== attempt.id)];
+  localStorage.setItem(LAST_ATTEMPT_KEY, JSON.stringify(attempt));
+  localStorage.setItem(ATTEMPT_HISTORY_KEY, JSON.stringify(nextHistory));
+}
 
 function useHashPage() {
   const read = () => window.location.hash.replace('#/', '') || 'home';
@@ -253,9 +334,88 @@ function PageIntro({ eyebrow, title, text, action }) {
   return <div className="page-intro"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h1>{title}</h1>{text && <p>{text}</p>}</div>{action}</div>;
 }
 
-function StudentDashboard({ go, student }) {
+function StudentDashboard({ go, student, setToast }) {
   const s = student || { name: 'Nguyễn Văn A', school: schools[0], grade: 'Khối 6', className: '6A1' };
   const miniStats = [[Award, '860', 'Điểm gần nhất', 'blue'], [ClipboardCheck, '12', 'Bài đã làm', 'violet'], [BookOpen, '8/12', 'Chủ đề đã luyện', 'cyan'], [TrendingUp, '72%', 'Tiến độ học tập', 'green']];
+  const [challengeOpen, setChallengeOpen] = useState(false);
+  const [challengeMode, setChallengeMode] = useState('quick');
+  const [searching, setSearching] = useState(false);
+  const [opponent, setOpponent] = useState(null);
+  const [roomCode, setRoomCode] = useState('');
+  const [roomCopied, setRoomCopied] = useState(false);
+  const [roomTopic, setRoomTopic] = useState('Chủ đề 1');
+  const [roomQuestions, setRoomQuestions] = useState('10');
+  const [roomTime, setRoomTime] = useState('10');
+  const [joinCode, setJoinCode] = useState('');
+  const [joinError, setJoinError] = useState('');
+  const [joinedRoom, setJoinedRoom] = useState(null);
+
+  useEffect(() => {
+    if (!challengeOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setChallengeOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [challengeOpen]);
+
+  const closeChallenge = () => {
+    setChallengeOpen(false);
+    setChallengeMode('quick');
+    setSearching(false);
+    setOpponent(null);
+    setRoomCode('');
+    setRoomCopied(false);
+    setRoomTopic('Chủ đề 1');
+    setRoomQuestions('10');
+    setRoomTime('10');
+    setJoinCode('');
+    setJoinError('');
+    setJoinedRoom(null);
+  };
+
+  const startQuickMatch = () => {
+    setChallengeMode('quick');
+    setSearching(true);
+    setOpponent(null);
+    window.setTimeout(() => {
+      setSearching(false);
+      setOpponent({ name: 'Trần Thị B', className: 'Lớp 6A1' });
+    }, 1100);
+  };
+
+  const createRoom = () => {
+    setChallengeMode('create');
+    const generatedCode = `IC3-${Math.floor(1000 + Math.random() * 9000)}`;
+    setRoomCode(generatedCode);
+    setRoomCopied(false);
+    setToast({ type: 'success', text: `Đã tạo phòng mẫu ${generatedCode}.` });
+  };
+
+  const copyRoomCode = async () => {
+    if (!roomCode) return;
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setRoomCopied(true);
+      setToast({ type: 'success', text: 'Đã sao chép mã phòng.' });
+    } catch {
+      setRoomCopied(true);
+      setToast({ type: 'success', text: 'Mã phòng sẵn sàng để sao chép.' });
+    }
+  };
+
+  const joinRoom = () => {
+    if (!joinCode.trim()) {
+      setJoinError('Vui lòng nhập mã phòng để tiếp tục.');
+      setJoinedRoom(null);
+      return;
+    }
+    setJoinError('');
+    setJoinedRoom({ code: joinCode.trim(), host: 'Lê Minh C', topic: 'Chủ đề 2', questions: 20, time: 20 });
+  };
+
   return (
     <main className="student-page page-shell">
       <section className="student-welcome">
@@ -265,26 +425,189 @@ function StudentDashboard({ go, student }) {
       <div className="dashboard-stats">{miniStats.map(([Icon, value, label, color]) => <article key={label} className="mini-stat"><span className={`stat-icon ${color}`}><Icon size={21}/></span><div><strong>{value}</strong><small>{label}</small></div></article>)}</div>
       <section className="learn-section"><div className="section-heading"><div><span className="eyebrow">Bắt đầu học</span><h2>Hôm nay bạn muốn làm gì?</h2></div><span className="streak-pill"><Sparkles size={15}/> Chuỗi 5 ngày</span></div>
         <div className="learning-actions">
-          <button className="learning-card practice" onClick={() => go('topics')}><span className="learning-icon"><BookOpen/></span><div><span className="card-kicker">Học theo chủ đề</span><h3>Ôn tập</h3><p>Củng cố kiến thức với toàn bộ câu hỏi theo từng chủ đề.</p><b>Bắt đầu ôn tập <ChevronRight size={18}/></b></div><span className="card-number">01</span></button>
-          <button className="learning-card exam" onClick={() => go('mode')}><span className="learning-icon"><TimerReset/></span><div><span className="card-kicker">Mô phỏng kỳ thi</span><h3>Thi thử</h3><p>Thử sức với 45 câu hỏi ngẫu nhiên trong thời gian 50 phút.</p><b>Vào phòng thi <ChevronRight size={18}/></b></div><span className="card-number">02</span></button>
+          <button className="learning-card learning-card-vertical practice" type="button" onClick={() => go('topics')}>
+            <div className="learning-card-head">
+              <span className="learning-icon"><BookOpen size={22}/></span>
+              <div>
+                <span className="card-kicker">HỌC THEO CHỦ ĐỀ</span>
+                <h3>Ôn tập</h3>
+              </div>
+            </div>
+            <div className="learning-illustration" aria-hidden="true">
+              <div className="learning-illustration-core">
+                <div className="learning-illustration-robot"><RobotBuddy small /><span className="learning-illustration-badge"><BookOpen size={18}/></span></div>
+              </div>
+            </div>
+            <div className="learning-card-body">
+              <div className="learning-metrics practice-metrics">
+                <div className="learning-metric">
+                  <span className="metric-icon"><Target size={17}/></span>
+                  <strong className="metric-value">8/12</strong>
+                  <small className="metric-label">Chủ đề hoàn thành</small>
+                </div>
+                <div className="learning-metric">
+                  <span className="metric-icon"><Trophy size={17}/></span>
+                  <strong className="metric-value">#12</strong>
+                  <small className="metric-label">Xếp hạng học tập</small>
+                </div>
+              </div>
+              <p>Củng cố kiến thức và hoàn thành toàn bộ câu hỏi theo từng chủ đề.</p>
+            </div>
+            <div className="learning-card-footer"><button className="learning-action-button practice-action" type="button" onClick={(event) => { event.stopPropagation(); go('topics'); }}><span>Bắt đầu ôn tập</span><ChevronRight size={18}/></button></div>
+            <span className="card-number">01</span>
+          </button>
+          <button className="learning-card learning-card-vertical exam" type="button" onClick={() => go('mode')}>
+            <div className="learning-card-head">
+              <span className="learning-icon"><TimerReset size={22}/></span>
+              <div>
+                <span className="card-kicker">MÔ PHỎNG KỲ THI</span>
+                <h3>Thi thử</h3>
+              </div>
+            </div>
+            <div className="learning-illustration" aria-hidden="true">
+              <div className="learning-illustration-core">
+                <div className="learning-illustration-robot"><RobotBuddy small /><span className="learning-illustration-badge"><TimerReset size={18}/></span></div>
+              </div>
+            </div>
+            <div className="learning-card-body">
+              <div className="learning-metrics exam-metrics">
+                <div className="learning-metric">
+                  <span className="metric-icon"><Award size={17}/></span>
+                  <strong className="metric-value">860<span className="metric-subvalue">/1000</span></strong>
+                  <small className="metric-label">Điểm gần nhất</small>
+                </div>
+                <div className="learning-metric">
+                  <span className="metric-icon"><Trophy size={17}/></span>
+                  <strong className="metric-value">#8</strong>
+                  <small className="metric-label">Xếp hạng toàn khối</small>
+                </div>
+              </div>
+              <p>Thử sức với đề thi mô phỏng, có giới hạn thời gian và câu hỏi ngẫu nhiên.</p>
+            </div>
+            <div className="learning-card-footer"><button className="learning-action-button exam-action" type="button" onClick={(event) => { event.stopPropagation(); go('mode'); }}><span>Vào phòng thi</span><ChevronRight size={18}/></button></div>
+            <span className="card-number">02</span>
+          </button>
+          <button className="learning-card learning-card-vertical challenge" type="button" onClick={() => setChallengeOpen(true)}>
+            <div className="learning-card-head">
+              <span className="learning-icon"><Swords size={22}/></span>
+              <div>
+                <span className="card-kicker">THI ĐẤU CÙNG BẠN BÈ</span>
+                <h3>Khiêu chiến</h3>
+              </div>
+            </div>
+            <div className="learning-illustration" aria-hidden="true">
+              <div className="learning-illustration-core">
+                <div className="learning-illustration-robot challenge-robot-set"><RobotBuddy small /><RobotBuddy small /><span className="learning-illustration-badge challenge-badge"><Zap size={18}/></span></div>
+              </div>
+            </div>
+            <div className="learning-card-body">
+              <div className="learning-metrics challenge-metrics">
+                <div className="learning-metric">
+                  <span className="metric-icon"><Medal size={17}/></span>
+                  <strong className="metric-value">Bạc II</strong>
+                  <small className="metric-label">Hạng thi đấu</small>
+                </div>
+                <div className="learning-metric">
+                  <span className="metric-icon"><ShieldCheck size={17}/></span>
+                  <strong className="metric-value">7–3</strong>
+                  <small className="metric-label">Thắng – Thua</small>
+                </div>
+              </div>
+              <p>Thi đấu 1 đấu 1 với cùng bộ câu hỏi. Người trả lời đúng nhiều hơn và nhanh hơn sẽ chiến thắng.</p>
+            </div>
+            <div className="learning-card-footer"><button className="learning-action-button challenge-action" type="button" onClick={(event) => { event.stopPropagation(); setChallengeOpen(true); }}><span>Khiêu chiến ngay</span><ChevronRight size={18}/></button></div>
+            <span className="card-number">03</span>
+          </button>
         </div>
       </section>
+      {challengeOpen && <div className="challenge-modal-backdrop" onClick={closeChallenge}><div className="challenge-modal" role="dialog" aria-modal="true" aria-label="Chọn cách khiêu chiến" onClick={(event) => event.stopPropagation()}>
+        <div className="challenge-modal-header">
+          <div>
+            <span className="eyebrow"><Swords size={15}/> Khiêu chiến</span>
+            <h2>Chọn cách khiêu chiến</h2>
+            <p>Chọn đối thủ và cùng chinh phục bộ câu hỏi IC3.</p>
+          </div>
+          <button className="icon-button close-button" type="button" aria-label="Đóng modal khiêu chiến" onClick={closeChallenge}><X size={18}/></button>
+        </div>
+        <div className="challenge-options">
+          <article className={cx('challenge-option', challengeMode === 'quick' && 'active')}>
+            <div className="challenge-option-icon"><Zap size={18}/></div>
+            <h3>Ghép nhanh</h3>
+            <p>Hệ thống sẽ tìm một đối thủ có trình độ gần với bạn.</p>
+            <button className="primary-button" type="button" onClick={startQuickMatch}>Tìm đối thủ</button>
+            {searching && <p className="challenge-status">Đang tìm đối thủ…</p>}
+            {opponent && <p className="challenge-status">Đối thủ mẫu: <b>{opponent.name}</b> · {opponent.className}</p>}
+          </article>
+          <article className={cx('challenge-option', challengeMode === 'create' && 'active')}>
+            <div className="challenge-option-icon"><Plus size={18}/></div>
+            <h3>Tạo phòng</h3>
+            <p>Tạo phòng riêng và gửi mã cho bạn bè.</p>
+            <div className="challenge-form-grid">
+              <label className="challenge-field">
+                <span>Chủ đề</span>
+                <select value={roomTopic} onChange={(event) => setRoomTopic(event.target.value)}>
+                  <option>Chủ đề 1</option>
+                  <option>Chủ đề 2</option>
+                  <option>Chủ đề 3</option>
+                </select>
+              </label>
+              <label className="challenge-field">
+                <span>Số câu</span>
+                <select value={roomQuestions} onChange={(event) => setRoomQuestions(event.target.value)}>
+                  <option value="10">10 câu</option>
+                  <option value="20">20 câu</option>
+                </select>
+              </label>
+              <label className="challenge-field">
+                <span>Thời gian</span>
+                <select value={roomTime} onChange={(event) => setRoomTime(event.target.value)}>
+                  <option value="10">10 phút</option>
+                  <option value="20">20 phút</option>
+                </select>
+              </label>
+            </div>
+            <button className="primary-button" type="button" onClick={createRoom}>Tạo phòng</button>
+            {roomCode && <div className="challenge-room-code"><span><b>Mã phòng:</b> {roomCode}</span><button className="ghost-button" type="button" onClick={copyRoomCode}>{roomCopied ? 'Đã sao chép' : 'Sao chép mã'}</button></div>}
+          </article>
+          <article className={cx('challenge-option', challengeMode === 'join' && 'active')}>
+            <div className="challenge-option-icon"><Hash size={18}/></div>
+            <h3>Vào phòng</h3>
+            <p>Nhập mã phòng được chia sẻ bởi bạn bè.</p>
+            <label className="challenge-field">
+              <span>Mã phòng</span>
+              <input value={joinCode} onChange={(event) => { setJoinCode(event.target.value); if (joinError) setJoinError(''); }} placeholder="Ví dụ: IC3-7284" />
+            </label>
+            <button className="primary-button" type="button" onClick={joinRoom}>Vào phòng</button>
+            {joinError && <p className="challenge-error">{joinError}</p>}
+            {joinedRoom && <div className="challenge-status"><b>Đã tìm thấy phòng</b><br/>{joinedRoom.host} · {joinedRoom.topic} · {joinedRoom.questions} câu · {joinedRoom.time} phút</div>}
+          </article>
+        </div>
+        <div className="challenge-rules">
+          <h3>Quy tắc trận đấu</h3>
+          <ul>
+            <li>Hai học sinh nhận cùng một bộ câu hỏi.</li>
+            <li>Câu đúng được tính điểm.</li>
+            <li>Nếu bằng điểm, người hoàn thành nhanh hơn chiến thắng.</li>
+            <li>Kết quả prototype chưa được lưu vào bảng xếp hạng thật.</li>
+          </ul>
+        </div>
+      </div></div>}
       <section className="recent-panel"><div className="section-heading"><div><span className="eyebrow">Hoạt động gần đây</span><h2>Tiếp tục hành trình</h2></div><button className="text-button" onClick={() => go('result')}>Xem kết quả <ChevronRight size={16}/></button></div><div className="recent-row"><span className="recent-icon"><FileQuestion/></span><div><strong>Chủ đề 2 · Kỹ năng máy tính</strong><small>Hoàn thành hôm qua · 38/45 câu đúng</small></div><div className="recent-score"><b>860</b><small>điểm</small></div><button className="icon-button" onClick={() => go('topics')}><Play size={18}/></button></div></section>
     </main>
   );
 }
 
-function ModePage({ go, setQuizMode }) {
-  const choose = (mode) => { setQuizMode(mode); go(mode === 'Ôn tập' ? 'topics' : 'quiz'); };
+function ModePage({ go, setQuizMode, setQuizScope }) {
+  const choose = (mode) => { setQuizMode(mode); if (mode === 'Thi thử') setQuizScope('Toàn bộ Khối 6'); go(mode === 'Ôn tập' ? 'topics' : 'quiz'); };
   return <main className="content-page page-shell"><PageIntro eyebrow="Lộ trình học tập" title="Chọn chế độ phù hợp với bạn" text="Ôn chắc kiến thức theo chủ đề hoặc kiểm tra năng lực trong môi trường mô phỏng kỳ thi."/><div className="mode-grid">
     <button className="mode-card practice-mode" onClick={() => choose('Ôn tập')}><div className="mode-visual"><BookOpen size={44}/><span className="orbit-dot"/></div><span className="mode-tag">Linh hoạt theo chủ đề</span><h2>Chế độ Ôn tập</h2><p>Làm toàn bộ câu hỏi trong chủ đề bạn chọn. Kết quả được hiển thị sau khi hoàn thành.</p><ul><li><Check size={16}/> Tự chọn chủ đề</li><li><Check size={16}/> Có giới hạn thời gian</li><li><Check size={16}/> Theo dõi tiến bộ từng phần</li></ul><b className="mode-cta">Chọn Ôn tập <ChevronRight size={19}/></b></button>
     <button className="mode-card exam-mode" onClick={() => choose('Thi thử')}><div className="recommended"><Sparkles size={14}/> Khuyến nghị</div><div className="mode-visual"><TimerReset size={44}/><span className="orbit-dot"/></div><span className="mode-tag">Mô phỏng kỳ thi thật</span><h2>Chế độ Thi thử</h2><p>Câu hỏi ngẫu nhiên đúng khối, có đồng hồ đếm ngược và xếp hạng sau khi hoàn thành.</p><ul><li><Check size={16}/> 40–45 câu ngẫu nhiên</li><li><Check size={16}/> Thời gian 50 phút</li><li><Check size={16}/> Ghi nhận bảng xếp hạng</li></ul><b className="mode-cta">Bắt đầu Thi thử <ChevronRight size={19}/></b></button>
   </div><div className="mode-note"><CircleHelp size={18}/><p><b>Gợi ý:</b> Nếu bạn mới bắt đầu, hãy ôn từng chủ đề trước khi làm bài thi thử.</p></div></main>;
 }
 
-function TopicsPage({ go, setQuizMode }) {
+function TopicsPage({ go, setQuizMode, setQuizScope }) {
   const topicData = [['Chủ đề 1', 18, 'Nền tảng máy tính'], ['Chủ đề 2', 24, 'Ứng dụng văn phòng'], ['Chủ đề 3', 20, 'Cuộc sống trực tuyến']];
-  return <main className="content-page page-shell"><PageIntro eyebrow="Ôn tập · Khối 6" title="Chọn chủ đề ôn tập" text="Mỗi chủ đề gồm toàn bộ câu hỏi thuộc phạm vi kiến thức tương ứng." action={<div className="grade-chip"><Layers3 size={17}/> Khối 6 <ChevronDown size={15}/></div>}/><div className="topics-grid">{topicData.map(([title, count, subtitle], i) => <button className="topic-card" key={title} onClick={() => {setQuizMode('Ôn tập'); go('quiz');}}><div className={`topic-art art-${i+1}`}><span>0{i+1}</span><div><BrainCircuit/><i/><i/></div></div><div className="topic-content"><span className="topic-subtitle">{subtitle}</span><h2>{title}</h2><div className="topic-bottom"><span><ListChecks size={17}/><b>{count}</b> câu hỏi</span><span className="round-arrow"><ChevronRight/></span></div></div></button>)}</div><div className="topics-tip"><Bot size={22}/><div><b>Mẹo học hiệu quả</b><p>Hoàn thành từng chủ đề và xem lại đáp án sai trước khi chuyển sang bài thi thử.</p></div></div></main>;
+  return <main className="content-page page-shell"><PageIntro eyebrow="Ôn tập · Khối 6" title="Chọn chủ đề ôn tập" text="Mỗi chủ đề gồm toàn bộ câu hỏi thuộc phạm vi kiến thức tương ứng." action={<div className="grade-chip"><Layers3 size={17}/> Khối 6 <ChevronDown size={15}/></div>}/><div className="topics-grid">{topicData.map(([title, count, subtitle], i) => <button className="topic-card" key={title} onClick={() => {setQuizMode('Ôn tập'); setQuizScope(title); go('quiz');}}><div className={`topic-art art-${i+1}`}><span>0{i+1}</span><div><BrainCircuit/><i/><i/></div></div><div className="topic-content"><span className="topic-subtitle">{subtitle}</span><h2>{title}</h2><div className="topic-bottom"><span><ListChecks size={17}/><b>{count}</b> câu hỏi</span><span className="round-arrow"><ChevronRight/></span></div></div></button>)}</div><div className="topics-tip"><Bot size={22}/><div><b>Mẹo học hiệu quả</b><p>Hoàn thành từng chủ đề và xem lại đáp án sai trước khi chuyển sang bài thi thử.</p></div></div></main>;
 }
 
 function QuizOption({ selected, multi, children, onClick, state }) {
@@ -313,60 +636,110 @@ function QuestionContent({ q, answer, setAnswer, review = false }) {
   }
   if (q.type === 'hotspot') {
     const selected = answer;
-    return <div className="hotspot-wrap"><div className="mock-window" onClick={(e) => { if (review) return; const r=e.currentTarget.getBoundingClientRect(); setAnswer({x:((e.clientX-r.left)/r.width)*100,y:((e.clientY-r.top)/r.height)*100});}}><div className="mock-titlebar"><span><i/><i/><i/></span><div>IC3 Practice Document</div><b>—　□　<span>×</span></b></div><div className="mock-toolbar"><span/><span/><span/><span/><span/></div><div className="mock-document"><div/><div/><div className="short"/><section><i/><i/><i/></section></div>{selected && <span className="hotspot-marker" style={{left:`${selected.x}%`,top:`${selected.y}%`}}><MousePointer2 size={20}/></span>}{review && <span className="correct-hotspot">Vùng đúng</span>}</div><p className="hotspot-hint"><MousePointer2 size={16}/> Bấm trực tiếp vào vùng bạn chọn trên hình.</p></div>;
+    const region = q.correctRegion;
+    return <div className="hotspot-wrap"><div className="mock-window" onClick={(e) => { if (review) return; const r=e.currentTarget.getBoundingClientRect(); setAnswer({x:((e.clientX-r.left)/r.width)*100,y:((e.clientY-r.top)/r.height)*100});}}><div className="mock-titlebar"><span><i/><i/><i/></span><div>IC3 Practice Document</div><b>—　□　<span>×</span></b></div><div className="mock-toolbar"><span/><span/><span/><span/><span/></div><div className="mock-document"><div/><div/><div className="short"/><section><i/><i/><i/></section></div>{selected && <span className="hotspot-marker" style={{left:`${selected.x}%`,top:`${selected.y}%`}}><MousePointer2 size={20}/></span>}{review && region && <span className="correct-hotspot" style={{left:`${region.xMin}%`,top:`${region.yMin}%`,width:`${region.xMax-region.xMin}%`,height:`${region.yMax-region.yMin}%`,right:'auto'}}>Vùng đúng</span>}</div><p className="hotspot-hint"><MousePointer2 size={16}/> {review ? 'Điểm màu đỏ là vị trí bạn đã chọn; khung xanh là vùng đáp án đúng.' : 'Bấm trực tiếp vào vùng bạn chọn trên hình.'}</p></div>;
   }
   return null;
 }
 
-function QuizPage({ go, quizMode, setResultData }) {
+function QuizPage({ go, quizMode, quizScope, setResultData }) {
+  const initialSeconds = quizMode === 'Thi thử' ? 50 * 60 : 30 * 60;
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [drawer, setDrawer] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const [seconds, setSeconds] = useState(quizMode === 'Thi thử' ? 50 * 60 : 30 * 60);
+  const [seconds, setSeconds] = useState(initialSeconds);
+  const [submitting, setSubmitting] = useState(false);
+  const submitGuard = useRef(false);
+  const submitLatest = useRef(null);
   const q = questions[index];
   const next = () => setIndex(i => Math.min(questions.length - 1, i + 1));
   const prev = () => setIndex(i => Math.max(0, i - 1));
-  useEffect(() => { const id = setInterval(() => setSeconds(s => Math.max(0, s - 1)), 1000); return () => clearInterval(id); }, []);
+  const answeredCount = questions.filter((question) => isQuestionAnswered(question, answers[question.id])).length;
+  const unansweredCount = questions.length - answeredCount;
+
+  const finish = (submittedByTimeout = false) => {
+    if (submitGuard.current) return;
+    submitGuard.current = true;
+    setSubmitting(true);
+    const attempt = calculateAttemptResult({ attemptQuestions: questions, answers, mode: quizMode, scope: quizScope, initialSeconds, remainingSeconds: seconds, submittedByTimeout });
+    saveAttempt(attempt);
+    setResultData(attempt);
+    setConfirm(false);
+    go('result');
+  };
+  submitLatest.current = finish;
+
+  useEffect(() => {
+    if (submitting) return undefined;
+    const id = setInterval(() => setSeconds(value => Math.max(0, value - 1)), 1000);
+    return () => clearInterval(id);
+  }, [submitting]);
+  useEffect(() => { if (seconds === 0) submitLatest.current?.(true); }, [seconds]);
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'PageUp') { e.preventDefault(); next(); } if (e.key === 'PageDown') { e.preventDefault(); prev(); } };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, []);
-  const formatTime = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
-  const finish = () => { setResultData({ score: 860, correct: 38, wrong: 7, time: quizMode === 'Thi thử' ? '32:18' : '18:42', mode: quizMode }); setConfirm(false); go('result'); };
+
   return <main className="quiz-page"><div className="quiz-topbar"><button className="quiz-logo" onClick={() => go('student')}><Logo compact/></button><div className="quiz-progress"><div><span>Câu {index + 1} / {questions.length}</span><b>{Math.round(((index+1)/questions.length)*100)}%</b></div><div className="progress-track"><i style={{width:`${((index+1)/questions.length)*100}%`}}/></div></div><div className="quiz-tools"><span className="timer-pill"><Clock3 size={18}/><div><small>Thời gian còn lại</small><b>{formatTime(seconds)}</b></div></span><button className="outline-button" onClick={() => setDrawer(true)}><PanelLeftOpen size={18}/><span>Mục lục</span></button></div></div>
     <div className="quiz-workspace"><section className="question-card"><div className="question-meta"><span className="question-number">Câu {index + 1}</span><span className="question-type">{q.label}</span><button><Flag size={16}/> Đánh dấu</button></div><h1>{q.text}</h1><QuestionContent q={q} answer={answers[q.id]} setAnswer={(value) => setAnswers(old => ({...old, [q.id]: value}))}/></section>
-      <div className="quiz-bottom"><button className="reset-button" onClick={() => setAnswers(old => ({...old, [q.id]: undefined}))}><RotateCcw size={18}/> Đặt lại</button><div><button className="secondary-button" onClick={prev} disabled={index === 0}><ChevronLeft size={18}/> Trước</button>{index < questions.length - 1 ? <button className="primary-button" onClick={next}>Tiếp <ChevronRight size={18}/></button> : <button className="submit-button" onClick={() => setConfirm(true)}><ClipboardCheck size={18}/> Nộp bài</button>}</div></div>
+      <div className="quiz-bottom"><button className="reset-button" onClick={() => setAnswers(old => { const nextAnswers = {...old}; delete nextAnswers[q.id]; return nextAnswers; })}><RotateCcw size={18}/> Đặt lại</button><div><button className="secondary-button" onClick={prev} disabled={index === 0}><ChevronLeft size={18}/> Trước</button>{index < questions.length - 1 ? <button className="primary-button" onClick={next}>Tiếp <ChevronRight size={18}/></button> : <button className="submit-button" disabled={submitting} onClick={() => setConfirm(true)}><ClipboardCheck size={18}/> {submitting ? 'Đang nộp...' : 'Nộp bài'}</button>}</div></div>
       <div className="keyboard-hint"><span><kbd>PageDown</kbd> Trước</span><span><kbd>PageUp</kbd> Tiếp</span></div>
     </div>
-    {drawer && <div className="overlay" onClick={() => setDrawer(false)}><aside className="question-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><span className="eyebrow">Tiến độ bài làm</span><h2>Mục lục câu hỏi</h2></div><button className="icon-button" onClick={() => setDrawer(false)}><X/></button></div><div className="drawer-legend"><span><i className="done"/>Đã trả lời</span><span><i/>Chưa trả lời</span></div><div className="question-grid">{questions.map((item, i) => <button key={item.id} className={cx(i === index && 'current', answers[item.id] !== undefined && 'answered')} onClick={() => {setIndex(i);setDrawer(false);}}>{i+1}</button>)}</div><div className="drawer-summary"><b>{Object.values(answers).filter(v => v !== undefined).length}/{questions.length}</b><span>Câu đã trả lời</span></div></aside></div>}
-    {confirm && <div className="overlay modal-overlay"><div className="confirm-modal"><div className="modal-icon"><ClipboardCheck/></div><h2>Xác nhận nộp bài?</h2><p>Bạn đã trả lời <b>{Object.values(answers).filter(v => v !== undefined).length}/{questions.length}</b> câu. Sau khi nộp, bạn không thể thay đổi đáp án.</p><div className="modal-actions"><button className="secondary-button" onClick={() => setConfirm(false)}>Tiếp tục làm</button><button className="submit-button" onClick={finish}>Xác nhận nộp</button></div></div></div>}
+    {drawer && <div className="overlay" onClick={() => setDrawer(false)}><aside className="question-drawer" onClick={e => e.stopPropagation()}><div className="drawer-head"><div><span className="eyebrow">Tiến độ bài làm</span><h2>Mục lục câu hỏi</h2></div><button className="icon-button" onClick={() => setDrawer(false)}><X/></button></div><div className="drawer-legend"><span><i className="done"/>Đã trả lời</span><span><i/>Chưa trả lời</span></div><div className="question-grid">{questions.map((item, i) => <button key={item.id} className={cx(i === index && 'current', isQuestionAnswered(item, answers[item.id]) && 'answered')} onClick={() => {setIndex(i);setDrawer(false);}}>{i+1}</button>)}</div><div className="drawer-summary"><b>{answeredCount}/{questions.length}</b><span>Câu đã trả lời</span></div></aside></div>}
+    {confirm && <div className="overlay modal-overlay"><div className="confirm-modal"><div className="modal-icon"><ClipboardCheck/></div><h2>Xác nhận nộp bài?</h2><div className="submit-summary"><span>Đã trả lời <b>{answeredCount}/{questions.length} câu</b></span><span>Chưa trả lời <b>{unansweredCount} câu</b></span><span>Thời gian còn lại <b>{formatTime(seconds)}</b></span></div>{unansweredCount > 0 && <p className="modal-warning">Bạn vẫn còn câu chưa trả lời. Các câu này sẽ không được tính điểm.</p>}<div className="modal-actions"><button className="secondary-button" disabled={submitting} onClick={() => setConfirm(false)}>Tiếp tục làm</button><button className="submit-button" disabled={submitting} onClick={() => finish(false)}>{submitting ? 'Đang nộp...' : 'Xác nhận nộp'}</button></div></div></div>}
   </main>;
 }
 
 function ScoreRing({ score }) {
-  return <div className="score-ring"><svg viewBox="0 0 160 160"><circle cx="80" cy="80" r="68"/><circle className="score-value" cx="80" cy="80" r="68"/></svg><div><span>Điểm số</span><strong>{score}</strong><small>/ 1000</small></div></div>;
+  const offset = 427 * (1 - Math.max(0, Math.min(1000, score)) / 1000);
+  return <div className="score-ring"><svg viewBox="0 0 160 160"><circle cx="80" cy="80" r="68"/><circle className="score-value" cx="80" cy="80" r="68" style={{strokeDashoffset:offset}}/></svg><div><span>Điểm số</span><strong>{score}</strong><small>/ 1000</small></div></div>;
 }
 
-function MiniLineChart() {
-  return <div className="chart-wrap"><div className="chart-y"><span>1000</span><span>750</span><span>500</span></div><svg viewBox="0 0 600 180" preserveAspectRatio="none"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2f6fed" stopOpacity=".24"/><stop offset="1" stopColor="#2f6fed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="600" y1="20" y2="20"/><line x1="0" x2="600" y1="90" y2="90"/><line x1="0" x2="600" y1="160" y2="160"/><path className="chart-area" d="M10 132 C80 122,105 132,150 105 S245 92,300 82 S390 100,445 62 S520 45,590 34 L590 170 L10 170Z"/><path className="chart-line" d="M10 132 C80 122,105 132,150 105 S245 92,300 82 S390 100,445 62 S520 45,590 34"/>{[[10,132],[150,105],[300,82],[445,62],[590,34]].map(([x,y],i)=><circle key={i} cx={x} cy={y} r="5"/>)}</svg><div className="chart-x"><span>Lần 1</span><span>Lần 2</span><span>Lần 3</span><span>Lần 4</span><span>Lần 5</span></div></div>;
+function MiniLineChart({ history }) {
+  const ordered = [...history].reverse();
+  const points = ordered.map((attempt, index) => {
+    const x = ordered.length === 1 ? 300 : 10 + (index * 580) / (ordered.length - 1);
+    return [x, 160 - (attempt.score / 1000) * 140];
+  });
+  const line = points.map(([x,y], index) => `${index ? 'L' : 'M'}${x} ${y}`).join(' ');
+  const area = points.length ? `${line} L${points.at(-1)[0]} 170 L${points[0][0]} 170Z` : '';
+  return <div className="chart-wrap"><div className="chart-y"><span>1000</span><span>500</span><span>0</span></div><svg viewBox="0 0 600 180" preserveAspectRatio="none"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2f6fed" stopOpacity=".24"/><stop offset="1" stopColor="#2f6fed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="600" y1="20" y2="20"/><line x1="0" x2="600" y1="90" y2="90"/><line x1="0" x2="600" y1="160" y2="160"/><path className="chart-area" d={area}/><path className="chart-line" d={line}/>{points.map(([x,y],i)=><circle key={i} cx={x} cy={y} r="5"/>)}</svg><div className="chart-x dynamic">{ordered.map((attempt, index)=><span key={attempt.id}>Lần {index+1}</span>)}</div></div>;
 }
 
-function ResultPage({ go, resultData }) {
-  const r = resultData || { score: 860, correct: 38, wrong: 7, time: '32:18', mode: 'Thi thử' };
-  const history = [
-    ['16/07/2026', 'Thi thử', 'Toàn bộ Khối 6', 860, '32:18'], ['14/07/2026', 'Ôn tập', 'Chủ đề 2', 810, '21:05'],
-    ['12/07/2026', 'Thi thử', 'Toàn bộ Khối 6', 780, '40:22'], ['09/07/2026', 'Ôn tập', 'Chủ đề 1', 720, '18:46'], ['07/07/2026', 'Thi thử', 'Toàn bộ Khối 6', 680, '45:10']
-  ];
-  return <main className="result-page page-shell"><section className="result-hero"><div className="result-message"><span className="eyebrow"><Sparkles size={14}/> Hoàn thành bài làm</span><h1>Tiến bộ rất tốt!</h1><p>Bạn đã nắm vững phần lớn kiến thức. Hãy xem lại các câu sai để bứt phá ở lần tiếp theo.</p><div className="result-actions"><button className="primary-button" onClick={() => go('quiz')}><RefreshCcw size={18}/> Làm lại</button><button className="secondary-button" onClick={() => go('review')}><ListChecks size={18}/> Xem lại đáp án</button><button className="text-button" onClick={() => go('student')}><Home size={17}/> Về Dashboard</button></div></div><ScoreRing score={r.score}/><div className="result-spark"><Bot size={34}/></div></section>
-    <div className="result-metrics"><article><span className="metric-icon green"><CheckCircle2/></span><div><strong>{r.correct}</strong><small>Câu đúng</small></div></article><article><span className="metric-icon red"><XCircle/></span><div><strong>{r.wrong}</strong><small>Câu sai</small></div></article><article><span className="metric-icon blue"><Clock3/></span><div><strong>{r.time}</strong><small>Thời gian</small></div></article><article><span className="metric-icon violet"><FileQuestion/></span><div><strong>{r.mode}</strong><small>Toàn bộ Khối 6</small></div></article></div>
-    <section className="history-section"><div className="section-heading"><div><span className="eyebrow">Phân tích tiến bộ</span><h2>5 lần làm bài gần nhất</h2></div><span className="growth-badge"><TrendingUp size={16}/> +180 điểm</span></div><MiniLineChart/><div className="history-table"><div className="table-head"><span>Ngày làm</span><span>Chế độ</span><span>Phạm vi</span><span>Điểm</span><span>Thời gian</span></div>{history.map((row,i)=><div className="table-row" key={row[0]}>{row.map((cell,j)=><span key={j} data-label={['Ngày làm','Chế độ','Phạm vi','Điểm','Thời gian'][j]} className={j===3?'score-cell':''}>{j===1?<b className={cell==='Thi thử'?'exam-pill':'practice-pill'}>{cell}</b>:cell}</span>)}</div>)}</div></section></main>;
+function ResultPage({ go, resultData, onRetry }) {
+  const r = resultData || readLastAttempt();
+  const history = readStoredAttempts().slice(0, 5);
+  if (!r) return <EmptyAttempt go={go} title="Chưa có kết quả" text="Hãy hoàn thành một bài ôn tập hoặc thi thử để xem kết quả tại đây."/>;
+  const growth = history.length > 1 ? history[0].score - history.at(-1).score : 0;
+  return <main className="result-page page-shell"><section className="result-hero"><div className="result-message"><span className="eyebrow"><Sparkles size={14}/> Hoàn thành bài làm</span><h1>{r.submittedByTimeout ? 'Bài đã được nộp do hết giờ' : 'Đã chấm điểm bài làm!'}</h1><p>{r.submittedByTimeout ? 'Hệ thống đã tự động nộp và chấm bài một lần khi đồng hồ về 00:00.' : 'Kết quả được tính trực tiếp từ đáp án bạn vừa hoàn thành.'}</p><div className="result-actions"><button className="primary-button" onClick={() => onRetry(r)}><RefreshCcw size={18}/> Làm lại</button><button className="secondary-button" onClick={() => go('review')}><ListChecks size={18}/> Xem lại đáp án</button><button className="text-button" onClick={() => go('student')}><Home size={17}/> Về Dashboard</button></div></div><ScoreRing score={r.score}/><div className="result-spark"><Bot size={34}/></div></section>
+    <div className="result-metrics"><article><span className="metric-icon green"><CheckCircle2/></span><div><strong>{r.correctCount}</strong><small>Câu đúng</small></div></article><article><span className="metric-icon red"><XCircle/></span><div><strong>{r.wrongCount}</strong><small>Sai / chưa trả lời ({r.unansweredCount})</small></div></article><article><span className="metric-icon blue"><Clock3/></span><div><strong>{formatTime(r.elapsedSeconds)}</strong><small>Thời gian hoàn thành</small></div></article><article><span className="metric-icon violet"><FileQuestion/></span><div><strong>{r.mode}</strong><small>{r.scope}</small></div></article></div>
+    <section className="history-section"><div className="section-heading"><div><span className="eyebrow">Phân tích tiến bộ</span><h2>{history.length} lần làm bài gần nhất</h2></div>{history.length > 1 && <span className="growth-badge"><TrendingUp size={16}/> {growth >= 0 ? '+' : ''}{growth} điểm</span>}</div>{history.length ? <><MiniLineChart history={history}/><div className="history-table"><div className="table-head"><span>Ngày làm</span><span>Chế độ</span><span>Phạm vi</span><span>Điểm</span><span>Thời gian</span></div>{history.map((attempt)=><div className="table-row" key={attempt.id}><span data-label="Ngày làm">{new Date(attempt.completedAt).toLocaleDateString('vi-VN')}</span><span data-label="Chế độ"><b className={attempt.mode==='Thi thử'?'exam-pill':'practice-pill'}>{attempt.mode}</b></span><span data-label="Phạm vi">{attempt.scope}</span><span data-label="Điểm" className="score-cell">{attempt.score}</span><span data-label="Thời gian">{formatTime(attempt.elapsedSeconds)}</span></div>)}</div></> : <div className="history-empty">Chưa có dữ liệu lịch sử trong 7 ngày gần đây.</div>}</section></main>;
 }
 
-function ReviewPage({ go }) {
-  const [index, setIndex] = useState(0); const q = questions[index];
-  const sampleAnswers = {1:1, 2:[0,2], 3:{0:true,1:true,2:true}, 4:{0:'CPU',1:'SSD',2:'RAM'}, 5:q?.items, 6:{x:82,y:10}};
-  return <main className="review-page"><div className="review-topbar"><button className="back-button" onClick={() => go('result')}><ChevronLeft/> Quay lại kết quả</button><div><span className="eyebrow">Xem lại đáp án</span><h2>Câu {index+1} / {questions.length}</h2></div><div className="review-status"><span><i className={index===0?'wrong':'correct'}/>{index===0?'Trả lời sai':'Trả lời đúng'}</span></div></div><div className="review-workspace"><section className="question-card"><div className="question-meta"><span className="question-number">Câu {index+1}</span><span className="question-type">{q.label}</span></div><h1>{q.text}</h1><QuestionContent q={q} answer={sampleAnswers[q.id]} setAnswer={()=>{}} review/><div className="explanation-box"><span><BrainCircuit size={22}/></span><div><b>Giải thích đáp án</b><p>{q.explanation}</p></div></div></section><div className="review-bottom"><button className="secondary-button" onClick={()=>setIndex(i=>Math.max(0,i-1))} disabled={index===0}><ChevronLeft/> Trước</button><div className="review-dots">{questions.map((_,i)=><button key={i} className={cx(i===index&&'active', i===0?'wrong':'correct')} onClick={()=>setIndex(i)}>{i+1}</button>)}</div>{index<questions.length-1?<button className="primary-button" onClick={()=>setIndex(i=>i+1)}>Tiếp <ChevronRight/></button>:<button className="primary-button" onClick={()=>go('student')}>Hoàn tất <Check/></button>}</div></div></main>;
+function EmptyAttempt({ go, title, text }) {
+  return <main className="result-page page-shell"><section className="empty-attempt"><span className="modal-icon"><FileQuestion/></span><h1>{title}</h1><p>{text}</p><button className="primary-button" onClick={() => go('student')}><Home size={17}/> Về Dashboard</button></section></main>;
+}
+
+function ReviewAnswerDetails({ question, answer }) {
+  if (question.type === 'matching') return <div className="review-comparison"><b>Đối chiếu cặp ghép</b>{question.pairs.map(([term, description], index)=><div key={term}><span>{description}</span><span>Bạn chọn: <strong>{answer?.[index] || 'Chưa trả lời'}</strong></span><span>Đáp án đúng: <strong>{term}</strong></span></div>)}</div>;
+  if (question.type === 'reorder') return <div className="review-comparison"><b>Đối chiếu thứ tự</b><div><span>Bạn sắp xếp: <strong>{Array.isArray(answer) ? answer.join(' → ') : 'Chưa trả lời'}</strong></span><span>Đáp án đúng: <strong>{question.correctOrder.join(' → ')}</strong></span></div></div>;
+  if (question.type === 'hotspot') return <div className="review-comparison"><b>Đối chiếu vị trí</b><div><span>Bạn chọn: <strong>{answer ? `x ${answer.x.toFixed(1)}%, y ${answer.y.toFixed(1)}%` : 'Chưa trả lời'}</strong></span><span>Vùng đúng: <strong>x {question.correctRegion.xMin}–{question.correctRegion.xMax}%, y {question.correctRegion.yMin}–{question.correctRegion.yMax}%</strong></span></div></div>;
+  return null;
+}
+
+function ReviewPage({ go, resultData }) {
+  const attempt = resultData || readLastAttempt();
+  const [index, setIndex] = useState(0);
+  if (!attempt?.questions?.length) return <EmptyAttempt go={go} title="Chưa có bài để xem lại" text="Hoàn thành một bài làm trước khi mở phần xem lại đáp án."/>;
+  const attemptQuestions = attempt.questions;
+  const q = attemptQuestions[index];
+  const answer = attempt.answers[q.id];
+  const answered = isQuestionAnswered(q, answer);
+  const correct = isQuestionCorrect(q, answer);
+  const status = !answered ? 'Chưa trả lời' : correct ? 'Trả lời đúng' : 'Trả lời sai';
+  const statusClass = !answered ? 'unanswered' : correct ? 'correct' : 'wrong';
+  return <main className="review-page"><div className="review-topbar"><button className="back-button" onClick={() => go('result')}><ChevronLeft/> Quay lại kết quả</button><div><span className="eyebrow">Xem lại đáp án</span><h2>Câu {index+1} / {attemptQuestions.length}</h2></div><div className="review-status"><span><i className={statusClass}/>{status}</span></div></div><div className="review-workspace"><section className="question-card"><div className="question-meta"><span className="question-number">Câu {index+1}</span><span className="question-type">{q.label}</span></div><h1>{q.text}</h1><QuestionContent q={q} answer={answer} setAnswer={()=>{}} review/><ReviewAnswerDetails question={q} answer={answer}/><div className="explanation-box"><span><BrainCircuit size={22}/></span><div><b>Giải thích đáp án</b><p>{q.explanation}</p></div></div></section><div className="review-bottom"><button className="secondary-button" onClick={()=>setIndex(i=>Math.max(0,i-1))} disabled={index===0}><ChevronLeft/> Trước</button><div className="review-dots">{attemptQuestions.map((question,i)=>{const itemAnswer=attempt.answers[question.id];const itemClass=!isQuestionAnswered(question,itemAnswer)?'unanswered':isQuestionCorrect(question,itemAnswer)?'correct':'wrong';return <button key={question.id} className={cx(i===index&&'active',itemClass)} onClick={()=>setIndex(i)}>{i+1}</button>;})}</div>{index<attemptQuestions.length-1?<button className="primary-button" onClick={()=>setIndex(i=>i+1)}>Tiếp <ChevronRight/></button>:<button className="primary-button" onClick={()=>go('student')}>Hoàn tất <Check/></button>}</div></div></main>;
 }
 
 function Filters({ filters, setFilters }) {
@@ -438,17 +811,19 @@ function App() {
   const [page, go] = useHashPage();
   const [student, setStudent] = useState({ name:'Nguyễn Văn A', school:'THCS Nguyễn Trãi', grade:'Khối 6', className:'6A1' });
   const [quizMode,setQuizMode]=useState('Thi thử');
-  const [resultData,setResultData]=useState(null);
+  const [quizScope,setQuizScope]=useState('Toàn bộ Khối 6');
+  const [resultData,setResultData]=useState(() => readLastAttempt());
   const [toast,setToast]=useState(null);
+  const retryAttempt = (attempt) => { setQuizMode(attempt.mode); setQuizScope(attempt.scope); setResultData(null); go('quiz'); };
   const bare=['quiz','review','teacher','admin'].includes(page);
   let content;
   if(page==='home')content=<HomePage go={go} onLogin={setStudent} setToast={setToast}/>;
   else if(page==='student')content=<StudentDashboard go={go} student={student}/>;
-  else if(page==='mode')content=<ModePage go={go} setQuizMode={setQuizMode}/>;
-  else if(page==='topics')content=<TopicsPage go={go} setQuizMode={setQuizMode}/>;
-  else if(page==='quiz')content=<QuizPage go={go} quizMode={quizMode} setResultData={setResultData}/>;
-  else if(page==='result')content=<ResultPage go={go} resultData={resultData}/>;
-  else if(page==='review')content=<ReviewPage go={go}/>;
+  else if(page==='mode')content=<ModePage go={go} setQuizMode={setQuizMode} setQuizScope={setQuizScope}/>;
+  else if(page==='topics')content=<TopicsPage go={go} setQuizMode={setQuizMode} setQuizScope={setQuizScope}/>;
+  else if(page==='quiz')content=<QuizPage go={go} quizMode={quizMode} quizScope={quizScope} setResultData={setResultData}/>;
+  else if(page==='result')content=<ResultPage go={go} resultData={resultData} onRetry={retryAttempt}/>;
+  else if(page==='review')content=<ReviewPage go={go} resultData={resultData}/>;
   else if(page==='leaderboard')content=<LeaderboardPage/>;
   else if(page==='teacher')content=<TeacherDashboard go={go} setToast={setToast}/>;
   else if(page==='admin')content=<AdminDashboard go={go} setToast={setToast}/>;
